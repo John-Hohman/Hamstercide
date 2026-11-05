@@ -1,2 +1,2 @@
 # Hamstercide
-Suicide is Badass
+Suicide is Bad
