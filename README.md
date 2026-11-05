@@ -1,0 +1,2 @@
+# Hamstercide
+Suicide is Badass
