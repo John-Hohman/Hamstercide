@@ -66,8 +66,21 @@ public class LedgeGrab : MonoBehaviour
     public float shimmyEdgeMargin = 0.3f;
     [Tooltip("Blocks shimmying into walls/obstacles beside you.")]
     public float sideCheckDistance = 0.4f;
+    [Tooltip("What counts as an obstacle beside you. Defaults to everything, so any wall or object stops the shimmy (your own colliders are ignored).")]
+    public LayerMask obstacleLayers = ~0;
     [Tooltip("If on, left/right is relative to the camera. If off, it uses the raw Horizontal axis.")]
     public bool cameraRelativeInput = true;
+
+    [Header("Corners")]
+    [Tooltip("Lets the player shimmy around outside corners (where the wall turns away).")]
+    public bool allowOutsideCorners = true;
+    [Tooltip("How far past the end of the ledge to search for the wall around the corner.")]
+    public float cornerSearchDistance = 0.6f;
+    [Tooltip("How far around the corner the player ends up, so their hands land on the new wall.")]
+    public float cornerWrapDepth = 0.3f;
+    public float cornerDuration = 0.35f;
+    [Tooltip("Before wrapping a corner, checks the character's body fits at the destination and halfway through the swing. Uses Obstacle Layers.")]
+    public bool checkCornerClearance = true;
 
     [Header("Ledge Jump")]
     public float jumpClearance = 0.8f;         // How far above the ledge top the jump rises
@@ -78,6 +91,10 @@ public class LedgeGrab : MonoBehaviour
     [Header("Input (swap for the new Input System if needed)")]
     public KeyCode jumpKey = KeyCode.Space;
     public KeyCode dropKey = KeyCode.LeftControl;
+
+    [Header("Debug")]
+    [Tooltip("Draws the shimmy check rays while hanging: green = clear, red = blocked. Cyan = ledge-ahead check, magenta = corner search. Visible in the Scene view (and the Game view if Gizmos is on).")]
+    public bool showDebugRays = true;
 
     [Header("Events (hook up animations, sounds, camera changes)")]
     public UnityEvent onGrab;
@@ -98,6 +115,8 @@ public class LedgeGrab : MonoBehaviour
     private CharacterController cc;
     private Rigidbody rb;
     private float nextGrabTime;
+    private readonly RaycastHit[] hitBuffer = new RaycastHit[8];
+    private readonly Collider[] overlapBuffer = new Collider[8];
     private bool blockRegrab;   // after a drop, input must be released before grabbing again
     private float lastY;
     private float velocityY;
@@ -209,6 +228,8 @@ public class LedgeGrab : MonoBehaviour
 
         // Cast toward the wall at hand level (just below the ledge top)
         Vector3 origin = probePos + Vector3.up * (handsHeight - 0.2f);
+        if (showDebugRays)
+            Debug.DrawRay(origin, -wallNormal * (hangDistanceFromWall + 0.4f), Color.cyan);
         if (!Physics.Raycast(origin, -wallNormal, out RaycastHit wallHit,
                 hangDistanceFromWall + 0.4f, ledgeLayers, QueryTriggerInteraction.Ignore))
             return false;
@@ -375,21 +396,32 @@ public class LedgeGrab : MonoBehaviour
         float input = GetShimmyInput(ledgeRight);
         ShimmyAmount = 0f;
 
+        // Show where the side checks are, in both directions, even when not moving
+        if (showDebugRays)
+        {
+            SideBlocked(ledgeRight, true);
+            SideBlocked(-ledgeRight, true);
+        }
+
         if (Mathf.Abs(input) < 0.1f)
             return;
 
         Vector3 side = ledgeRight * Mathf.Sign(input);
         Vector3 newPos = transform.position + ledgeRight * input * shimmySpeed * Time.deltaTime;
 
-        // Blocked by something beside us (e.g. an adjoining wall)?
-        Vector3 bodyPoint = transform.position + Vector3.up * (handsHeight * 0.5f);
-        if (Physics.Raycast(bodyPoint, side, sideCheckDistance, ledgeLayers, QueryTriggerInteraction.Ignore))
+        // Stop if any wall or object is in the way beside us
+        if (SideBlocked(side, false))
             return;
 
         // Does the ledge still continue a little ahead of us?
         Vector3 probe = newPos + side * shimmyEdgeMargin;
         if (!ProbeLedge(probe, out Vector3 top, out Vector3 normal))
+        {
+            // The ledge ended: see if the wall turns around an outside corner
+            if (allowOutsideCorners)
+                TryWrapCorner(side);
             return;
+        }
 
         // Stay glued to the ledge (handles slightly uneven or curved ledges)
         float dist = Vector3.Dot(newPos - top, normal);
@@ -403,6 +435,151 @@ public class LedgeGrab : MonoBehaviour
             Quaternion.LookRotation(-wallNormal, Vector3.up), 10f * Time.deltaTime);
 
         ShimmyAmount = input;
+    }
+
+    // True if anything (other than the player) is in the way to one side, checked at body and hand height
+    bool SideBlocked(Vector3 side, bool draw)
+    {
+        Vector3 bodyPoint = transform.position + Vector3.up * (handsHeight * 0.5f);
+        Vector3 handPoint = transform.position + Vector3.up * (handsHeight - 0.2f);
+
+        bool blocked = RayBlocked(bodyPoint, side) | RayBlocked(handPoint, side);
+
+        if (draw)
+        {
+            Color c = blocked ? Color.red : Color.green;
+            Debug.DrawRay(bodyPoint, side * sideCheckDistance, c);
+            Debug.DrawRay(handPoint, side * sideCheckDistance, c);
+        }
+        return blocked;
+    }
+
+    bool RayBlocked(Vector3 origin, Vector3 direction)
+    {
+        int count = Physics.RaycastNonAlloc(origin, direction, hitBuffer, sideCheckDistance,
+            obstacleLayers, QueryTriggerInteraction.Ignore);
+
+        for (int i = 0; i < count; i++)
+        {
+            // Ignore the player's own colliders
+            if (!hitBuffer[i].transform.IsChildOf(transform))
+                return true;
+        }
+        return false;
+    }
+
+    // Outside corner: the ledge ends here, but the wall turns and the ledge continues around it
+    void TryWrapCorner(Vector3 side)
+    {
+        Vector3 pivot = transform.position;
+
+        // Start beside us, slightly behind the current wall plane (just past the corner), and cast back toward the corner
+        Vector3 origin = pivot + Vector3.up * (handsHeight - 0.2f)
+                       + side * cornerSearchDistance
+                       - wallNormal * (hangDistanceFromWall + cornerWrapDepth);
+
+        if (showDebugRays)
+            Debug.DrawRay(origin, -side * (cornerSearchDistance + 0.1f), Color.magenta, 0.5f);
+
+        if (!Physics.Raycast(origin, -side, out RaycastHit cornerHit, cornerSearchDistance + 0.1f,
+                ledgeLayers, QueryTriggerInteraction.Ignore))
+            return;
+
+        Vector3 newNormal = new Vector3(cornerHit.normal.x, 0f, cornerHit.normal.z);
+        if (newNormal.sqrMagnitude < 0.01f)
+            return;
+        newNormal.Normalize();
+
+        // The new wall must face the way we're heading
+        if (Vector3.Dot(newNormal, side) < 0.5f)
+            return;
+
+        // The ledge top must continue on the new wall
+        Vector3 topOrigin = cornerHit.point - newNormal * 0.1f;
+        topOrigin.y = ledgeTopPoint.y + 0.4f;
+        if (!Physics.Raycast(topOrigin, Vector3.down, out RaycastHit topHit,
+                0.8f, ledgeLayers, QueryTriggerInteraction.Ignore))
+            return;
+
+        if (topHit.normal.y < 0.7f)
+            return;
+
+        Vector3 target = cornerHit.point + newNormal * hangDistanceFromWall;
+        target.y = topHit.point.y - handsHeight;
+
+        // Swing around the outside of the corner edge instead of cutting through it
+        Vector3 planePoint = pivot - wallNormal * hangDistanceFromWall;
+        Vector3 edge = planePoint + side * Vector3.Dot(cornerHit.point - planePoint, side);
+        Vector3 control = edge + (wallNormal + newNormal) * (hangDistanceFromWall * 1.5f);
+
+        // Make sure there is room to turn the corner before committing to it
+        if (checkCornerClearance)
+        {
+            control.y = Mathf.Lerp(pivot.y, target.y, 0.5f);
+            Vector3 midPoint = 0.25f * pivot + 0.5f * control + 0.25f * target;   // halfway along the swing
+
+            bool roomAtMid = HasRoomAt(midPoint);
+            bool roomAtEnd = HasRoomAt(target);
+            if (!roomAtMid || !roomAtEnd)
+                return;
+        }
+
+        StartCoroutine(CornerRoutine(pivot, control, target, newNormal, topHit.point));
+    }
+
+    // True if the character's capsule fits at this feet position (ignoring the player's own colliders)
+    bool HasRoomAt(Vector3 feetPos)
+    {
+        float radius = cc != null ? cc.radius : 0.3f;
+        float height = cc != null ? cc.height : 1.8f;
+
+        // Shrink a little, and never wider than the gap between the body and the wall we hang from
+        float testRadius = Mathf.Min(radius * 0.9f, hangDistanceFromWall - 0.05f);
+
+        Vector3 bottom = feetPos + Vector3.up * (radius + 0.05f);
+        Vector3 top = feetPos + Vector3.up * (height - radius);
+
+        int count = Physics.OverlapCapsuleNonAlloc(bottom, top, testRadius, overlapBuffer,
+            obstacleLayers, QueryTriggerInteraction.Ignore);
+
+        bool clear = true;
+        for (int i = 0; i < count; i++)
+        {
+            if (!overlapBuffer[i].transform.IsChildOf(transform))
+            {
+                clear = false;
+                break;
+            }
+        }
+
+        if (showDebugRays)
+            Debug.DrawLine(bottom, top, clear ? Color.green : Color.red, 0.5f);
+
+        return clear;
+    }
+
+    IEnumerator CornerRoutine(Vector3 start, Vector3 control, Vector3 end, Vector3 newNormal, Vector3 newTopPoint)
+    {
+        state = State.Transition;
+        ShimmyAmount = 0f;
+
+        Quaternion startRot = facing.rotation;
+        Quaternion endRot = Quaternion.LookRotation(-newNormal, Vector3.up);
+        control.y = Mathf.Lerp(start.y, end.y, 0.5f);
+
+        for (float t = 0f; t < 1f; t += Time.deltaTime / cornerDuration)
+        {
+            float u = 1f - t;
+            transform.position = u * u * start + 2f * u * t * control + t * t * end;   // curved path around the corner
+            facing.rotation = Quaternion.Slerp(startRot, endRot, t);
+            yield return null;
+        }
+
+        transform.position = end;
+        facing.rotation = endRot;
+        ledgeTopPoint = newTopPoint;
+        wallNormal = newNormal;
+        state = State.Hanging;
     }
 
     void LedgeJump()
