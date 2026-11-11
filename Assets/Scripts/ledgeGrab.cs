@@ -11,6 +11,13 @@ using UnityEngine.Events;
 /// </summary>
 public class LedgeGrab : MonoBehaviour
 {
+    public enum GrabMode
+    {
+        Automatic,        // Grabs any ledge you're falling next to
+        HoldKey,          // Grabs only while the grab key is held
+        MoveTowardLedge   // Grabs only while you're pushing toward the ledge
+    }
+
     [Header("Your Existing Setup")]
     [Tooltip("Drag your movement script here. It is disabled while on a ledge.")]
     public MonoBehaviour movementScript;
@@ -26,11 +33,14 @@ public class LedgeGrab : MonoBehaviour
     public bool returnControlOnJump = true;
 
     [Header("Grab Input")]
-    [Tooltip("If on, you must hold the grab key to grab a ledge. If off, ledges are grabbed automatically.")]
-    public bool requireGrabKey = true;
+    [Tooltip("Automatic: always grab. HoldKey: hold the grab key. MoveTowardLedge: push toward the ledge (uses the Horizontal/Vertical axes, camera-relative if enabled below).")]
+    public GrabMode grabMode = GrabMode.MoveTowardLedge;
+    [Tooltip("Used by HoldKey mode.")]
     public KeyCode grabKey = KeyCode.LeftShift;
-    [Tooltip("If on, letting go of the grab key while hanging drops you. If off, you only need to hold it to grab, then use the drop key to let go.")]
+    [Tooltip("HoldKey mode only: if on, letting go of the grab key while hanging drops you. If off, you only need it to grab, then use the drop key to let go.")]
     public bool releaseToDrop = false;
+    [Tooltip("MoveTowardLedge mode: how directly you must push toward the ledge (1 = straight at it, 0 = any direction along it). 0.5 allows roughly 60 degrees off.")]
+    [Range(0.1f, 1f)] public float moveTowardThreshold = 0.5f;
 
     [Header("Detection")]
     public LayerMask ledgeLayers = ~0;         // Environment layers only - exclude the Player layer
@@ -88,6 +98,7 @@ public class LedgeGrab : MonoBehaviour
     private CharacterController cc;
     private Rigidbody rb;
     private float nextGrabTime;
+    private bool blockRegrab;   // after a drop, input must be released before grabbing again
     private float lastY;
     private float velocityY;
 
@@ -129,8 +140,15 @@ public class LedgeGrab : MonoBehaviour
 
     void TryGrabLedge()
     {
-        // Must be holding the grab key (if required)
-        if (requireGrabKey && !Input.GetKey(grabKey))
+        // After a drop, wait for the player to let go of the stick/keys so they don't instantly regrab
+        if (blockRegrab)
+        {
+            if (GetWorldInput().sqrMagnitude < 0.01f) blockRegrab = false;
+            else return;
+        }
+
+        // Must be holding the grab key (HoldKey mode)
+        if (grabMode == GrabMode.HoldKey && !Input.GetKey(grabKey))
             return;
 
         // Only grab while airborne and falling (or near the peak of a jump)
@@ -145,6 +163,14 @@ public class LedgeGrab : MonoBehaviour
 
         if (Mathf.Abs(wallHit.normal.y) > 0.3f)   // must be roughly vertical
             return;
+
+        // Must be pushing toward the wall (MoveTowardLedge mode)
+        if (grabMode == GrabMode.MoveTowardLedge)
+        {
+            Vector3 toWall = new Vector3(-wallHit.normal.x, 0f, -wallHit.normal.z).normalized;
+            if (!IsMovingToward(toWall))
+                return;
+        }
 
         // 2) Cast down from above/inside the wall to find the ledge top
         Vector3 topOrigin = wallHit.point - wallHit.normal * 0.1f;
@@ -272,7 +298,7 @@ public class LedgeGrab : MonoBehaviour
     void HandleHangInput()
     {
         // Let go of the grab key = drop
-        if (requireGrabKey && releaseToDrop && !Input.GetKey(grabKey))
+        if (grabMode == GrabMode.HoldKey && releaseToDrop && !Input.GetKey(grabKey))
         {
             Drop();
             return;
@@ -294,6 +320,36 @@ public class LedgeGrab : MonoBehaviour
             HandleShimmy();
         else
             ShimmyAmount = 0f;
+    }
+
+    // World-space movement direction the player is pushing (magnitude 0..1)
+    Vector3 GetWorldInput()
+    {
+        float h = Input.GetAxisRaw("Horizontal");
+        float v = Input.GetAxisRaw("Vertical");
+        if (h * h + v * v < 0.01f)
+            return Vector3.zero;
+
+        Vector3 world;
+        if (cameraRelativeInput && cameraTransform != null)
+        {
+            Vector3 camF = Vector3.ProjectOnPlane(cameraTransform.forward, Vector3.up).normalized;
+            Vector3 camR = Vector3.ProjectOnPlane(cameraTransform.right, Vector3.up).normalized;
+            world = camF * v + camR * h;
+        }
+        else
+        {
+            world = new Vector3(h, 0f, v);
+        }
+        return Vector3.ClampMagnitude(world, 1f);
+    }
+
+    bool IsMovingToward(Vector3 direction)
+    {
+        Vector3 input = GetWorldInput();
+        if (input.sqrMagnitude < 0.01f)
+            return false;
+        return Vector3.Dot(input.normalized, direction) >= moveTowardThreshold;
     }
 
     float GetShimmyInput(Vector3 ledgeRight)
@@ -434,6 +490,7 @@ public class LedgeGrab : MonoBehaviour
     void Drop()
     {
         ReleaseControl();
+        if (grabMode == GrabMode.MoveTowardLedge) blockRegrab = true;
         onDrop?.Invoke();
     }
 
