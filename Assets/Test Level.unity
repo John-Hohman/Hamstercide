@@ -772,6 +772,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 6d93a6b5e9340b84f9b36581e4a25c80, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerController
+  movementLocked: 0
   speed: 6
   jumpHeight: 1.5
   gravity: -20
@@ -842,6 +843,12 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::LedgeGrab
   movementScript: {fileID: 304681719}
   facing: {fileID: 1863967440}
+  cameraTransform: {fileID: 683787636}
+  disableMovementScript: 0
+  returnControlOnJump: 1
+  requireGrabKey: 1
+  grabKey: 304
+  releaseToDrop: 0
   ledgeLayers:
     serializedVersion: 2
     m_Bits: 128
@@ -855,6 +862,11 @@ MonoBehaviour:
   handsHeight: 1
   hangDistanceFromWall: 0.74
   snapDuration: 0.15
+  allowShimmy: 1
+  shimmySpeed: 1.5
+  shimmyEdgeMargin: 0.3
+  sideCheckDistance: 0.4
+  cameraRelativeInput: 1
   jumpClearance: 2.01
   jumpForwardSpeed: 3
   ledgeJumpGravity: -20
@@ -869,6 +881,36 @@ MonoBehaviour:
   onDrop:
     m_PersistentCalls:
       m_Calls: []
+  onMovementLockChanged:
+    m_PersistentCalls:
+      m_Calls:
+      - m_Target: {fileID: 304681719}
+        m_TargetAssemblyTypeName: PlayerController, Assembly-CSharp
+        m_MethodName: SetMovementLocked
+        m_Mode: 0
+        m_Arguments:
+          m_ObjectArgument: {fileID: 0}
+          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
+          m_IntArgument: 0
+          m_FloatArgument: 0
+          m_StringArgument: 
+          m_BoolArgument: 0
+        m_CallState: 2
+  onLedgeJumpLaunch:
+    m_PersistentCalls:
+      m_Calls:
+      - m_Target: {fileID: 304681719}
+        m_TargetAssemblyTypeName: PlayerController, Assembly-CSharp
+        m_MethodName: LaunchUp
+        m_Mode: 0
+        m_Arguments:
+          m_ObjectArgument: {fileID: 0}
+          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
+          m_IntArgument: 0
+          m_FloatArgument: 0
+          m_StringArgument: 
+          m_BoolArgument: 0
+        m_CallState: 2
 --- !u!1 &359126660
 GameObject:
   m_ObjectHideFlags: 0

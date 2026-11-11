@@ -3,6 +3,12 @@ using UnityEngine;
 [RequireComponent(typeof(CharacterController))]
 public class PlayerController : MonoBehaviour
 {
+    public bool movementLocked;
+    public void SetMovementLocked(bool locked) { movementLocked = locked; }
+    public void LaunchUp(float speed)
+    {
+        velocity.y = speed;
+    }
     [Header("Movement")]
     public float speed = 6f;
     public float jumpHeight = 1.5f;
@@ -33,6 +39,7 @@ public class PlayerController : MonoBehaviour
 
     void Update()
     {
+        if (movementLocked || !controller.enabled) return;
         Move();
 
     }
