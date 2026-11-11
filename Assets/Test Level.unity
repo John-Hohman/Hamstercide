@@ -737,6 +737,7 @@ GameObject:
   - component: {fileID: 304681719}
   - component: {fileID: 304681721}
   - component: {fileID: 304681722}
+  - component: {fileID: 304681723}
   m_Layer: 6
   m_Name: Player1
   m_TagString: Player
@@ -846,9 +847,10 @@ MonoBehaviour:
   cameraTransform: {fileID: 683787636}
   disableMovementScript: 0
   returnControlOnJump: 1
-  requireGrabKey: 1
+  grabMode: 2
   grabKey: 304
   releaseToDrop: 0
+  moveTowardThreshold: 0.5
   ledgeLayers:
     serializedVersion: 2
     m_Bits: 128
@@ -866,12 +868,21 @@ MonoBehaviour:
   shimmySpeed: 1.5
   shimmyEdgeMargin: 0.3
   sideCheckDistance: 0.4
+  obstacleLayers:
+    serializedVersion: 2
+    m_Bits: 4294967295
   cameraRelativeInput: 1
+  allowOutsideCorners: 1
+  cornerSearchDistance: 0.6
+  cornerWrapDepth: 0.3
+  cornerDuration: 0.35
+  checkCornerClearance: 1
   jumpClearance: 2.01
   jumpForwardSpeed: 3
   ledgeJumpGravity: -20
   jumpKey: 32
   dropKey: 306
+  showDebugRays: 1
   onGrab:
     m_PersistentCalls:
       m_Calls: []
@@ -911,6 +922,19 @@ MonoBehaviour:
           m_StringArgument: 
           m_BoolArgument: 0
         m_CallState: 2
+--- !u!114 &304681723
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 304681717}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 44dfe0bbf1cd71d41bf263b293142662, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerPusher
+  pushPower: 3
 --- !u!1 &359126660
 GameObject:
   m_ObjectHideFlags: 0

@@ -74,8 +74,8 @@ public class GrabController : MonoBehaviour
 
             //Debug.Log("Cast hit: " + hit.collider.name);
 
-            //if (hit.rigidbody == null) { Debug.Log("No Rigidbody on " + hit.collider.name); continue; }
-            //if (hit.rigidbody.isKinematic) { Debug.Log(hit.collider.name + " is kinematic"); continue; }
+            if (hit.rigidbody == null) { /*Debug.Log("No Rigidbody on " + hit.collider.name);*/ continue; }
+            if (hit.rigidbody.isKinematic) { /*Debug.Log(hit.collider.name + " is kinematic");*/ continue; }
 
             held = hit.rigidbody;
             held.useGravity = false;
